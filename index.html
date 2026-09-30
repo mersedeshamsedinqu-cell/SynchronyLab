@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SynchronyLab</title>
+<meta name="description" content="A live spiking-network model of hippocampal–prefrontal oscillations, coherence and theta–gamma coupling under progressive synaptic loss.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: instrument console — control rail on the left, stacked live read-outs on the right, analysis panels in a 3-up row. */
+:root{
+  --bg:#f3f5f7; --panel:#ffffff; --panel-2:#eef2f6; --line:#d9e0e8; --fg:#15212d; --muted:#5d6c7c;
+  --hpc:#b86e0c; --pfc:#1c72ad; --inh:#7a52c2; --good:#1f8a5b; --warn:#b07a0a; --bad:#c23b3b;
+  --grid:rgba(21,33,45,.08); --band:rgba(21,33,45,.045);
+  --f-display:"Spectral",Georgia,"Times New Roman",serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1620; --panel:#152130; --panel-2:#1a2839; --line:#26374b; --fg:#dde6ef; --muted:#8b9db1;
+  --hpc:#f0a64b; --pfc:#62b6ec; --inh:#b394ee; --good:#4cc38a; --warn:#e3b341; --bad:#f07171;
+  --grid:rgba(221,230,239,.07); --band:rgba(221,230,239,.04); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1620; --panel:#152130; --panel-2:#1a2839; --line:#26374b; --fg:#dde6ef; --muted:#8b9db1;
+  --hpc:#f0a64b; --pfc:#62b6ec; --inh:#b394ee; --good:#4cc38a; --warn:#e3b341; --bad:#f07171;
+  --grid:rgba(221,230,239,.07); --band:rgba(221,230,239,.04); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--f-body);font-size:14px;line-height:1.5;padding-inline:clamp(16px,3vw,32px);padding-block:20px 48px}
+.wrap{max-width:1320px;margin-inline:auto;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--f-display);font-weight:600;text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(28px,3.4vw,38px);line-height:1.05}
+h2{font-size:20px}
+h3{font-size:15px;font-family:var(--f-body);font-weight:600;letter-spacing:0}
+.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:500}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+p{margin:0}
+a{color:var(--pfc)}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.brand{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:720px}
+.brand p{color:var(--muted);max-width:64ch}
+.brand .who{font-size:12.5px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:7px 13px;font-weight:500}
+button:hover{border-color:var(--muted)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--pfc);outline-offset:2px}
+button.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+button:disabled{opacity:.5;cursor:default}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:7px 10px;background:var(--panel)}
+.seg button[aria-pressed="true"]{background:var(--panel-2);color:var(--fg);box-shadow:inset 0 -2px 0 var(--fg)}
+.clock{font-family:var(--f-mono);color:var(--muted);font-size:12.5px;min-width:9ch;text-align:right}
+
+/* main grid */
+.layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:minmax(0,1fr)}}
+.rail{display:flex;flex-direction:column;gap:18px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+@media (max-width:900px){.rail{position:static}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.ctl{display:flex;flex-direction:column;gap:4px}
+.ctl + .ctl{margin-top:14px}
+.ctl .row{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.ctl label{font-weight:500}
+.ctl output{font-family:var(--f-mono);font-size:12.5px}
+.ctl small{color:var(--muted);font-size:12px;line-height:1.4}
+input[type=range]{width:100%;accent-color:var(--fg)}
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.presets button{padding:5px 10px;font-size:12.5px;border-radius:999px}
+.presets button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+
+.stage{display:flex;flex-direction:column;gap:18px;min-width:0}
+
+/* metrics */
+.metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+@media (max-width:1100px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:520px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.m{background:var(--panel);padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.m .v{font-family:var(--f-mono);font-size:22px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.15}
+.m .v small{font-size:12px;color:var(--muted);font-weight:400;margin-left:3px}
+.chip{align-self:flex-start;font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid currentColor;font-weight:500}
+.chip.good{color:var(--good)}.chip.warn{color:var(--warn)}.chip.bad{color:var(--bad)}.chip.none{color:var(--muted)}
+.sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:0}
+
+/* panels */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px 12px;min-width:0;display:flex;flex-direction:column;gap:8px}
+.panel header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.panel header p{color:var(--muted);font-size:12.5px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+canvas{display:block;width:100%}
+.cv-raster{height:280px}
+.cv-lfp{height:150px}
+.cv-sm{height:190px}
+.cv-sweep{height:230px}
+.trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+@media (max-width:1100px){.trio{grid-template-columns:minmax(0,1fr)}}
+.rlabels{position:relative}
+.rlabels span{position:absolute;left:8px;font-size:11px;font-family:var(--f-mono);padding:1px 6px;border-radius:4px;background:var(--panel);opacity:.92}
+.progress{height:3px;background:var(--panel-2);border-radius:2px;overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:var(--fg);transition:width .2s}
+.sweep-foot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
+.sweep-foot p{color:var(--muted);font-size:12.5px;max-width:70ch}
+
+/* notes */
+.notes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+@media (max-width:1000px){.notes{grid-template-columns:minmax(0,1fr)}}
+.notes .card{display:flex;flex-direction:column;gap:8px}
+.notes p,.notes li{color:var(--muted);font-size:13px}
+.notes ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.eq{font-family:var(--f-mono);font-size:12.5px;background:var(--panel-2);border-radius:6px;padding:8px 10px;overflow-x:auto;white-space:pre;color:var(--fg)}
+footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:14px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px}
+@media (prefers-reduced-motion:reduce){.progress i{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="lbl">Computational neuroscience · live model</span>
+      <h1>SynchronyLab</h1>
+      <p>A spiking network of hippocampus and prefrontal cortex, simulated in your browser. Weaken the synapses and watch theta–gamma rhythms and fronto‑hippocampal coherence fall apart.</p>
+      <p class="who">Mersedeh Shamsedin · Neuroscience &amp; Neuropharmacology</p>
+    </div>
+    <div class="actions">
+      <span class="clock" id="clock">t = 0.0 s</span>
+      <div class="seg" role="group" aria-label="Simulation speed">
+        <button id="sp25" data-speed="0.25" aria-pressed="false">¼×</button>
+        <button id="sp50" data-speed="0.5" aria-pressed="false">½×</button>
+        <button id="sp100" data-speed="1" aria-pressed="true">1×</button>
+      </div>
+      <button id="runBtn" class="primary">Pause</button>
+      <button id="resetBtn">Reset network</button>
+      <button id="csvBtn">Copy data as CSV</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail">
+      <div class="card">
+        <span class="lbl">Condition</span>
+        <div class="presets" role="group" aria-label="Presets">
+          <button data-preset="healthy" aria-pressed="true">Healthy</button>
+          <button data-preset="early">Early AD‑like</button>
+          <button data-preset="advanced">Advanced AD‑like</button>
+          <button data-preset="disconnected">Disconnected</button>
+        </div>
+      </div>
+      <div class="card" id="controls"></div>
+    </aside>
+
+    <section class="stage">
+      <div class="metrics" id="metrics"></div>
+
+      <div class="panel">
+        <header>
+          <h3>Spike raster · last 1 s</h3>
+          <div class="legend">
+            <span><i class="sw" style="background:var(--hpc)"></i>HPC pyramidal</span>
+            <span><i class="sw" style="background:var(--pfc)"></i>PFC pyramidal</span>
+            <span><i class="sw" style="background:var(--inh)"></i>Fast‑spiking interneurons</span>
+          </div>
+        </header>
+        <div class="rlabels">
+          <canvas id="cvRaster" class="cv-raster" aria-label="Spike raster of 400 neurons"></canvas>
+          <span style="top:6px;color:var(--hpc)">Hippocampus · 200</span>
+          <span style="top:calc(50% + 6px);color:var(--pfc)">Prefrontal · 200</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <header>
+          <h3>Local field potential proxy</h3>
+          <p>Mean synaptic current onto pyramidal cells, sampled at 1 kHz</p>
+        </header>
+        <canvas id="cvLfp" class="cv-lfp" aria-label="LFP traces"></canvas>
+      </div>
+
+      <div class="trio">
+        <div class="panel">
+          <header><h3>Power spectrum</h3><p class="mono" id="psdNote"></p></header>
+          <canvas id="cvPsd" class="cv-sm" aria-label="Power spectral density"></canvas>
+        </div>
+        <div class="panel">
+          <header><h3>HPC–PFC coherence</h3><p>Magnitude‑squared, Welch</p></header>
+          <canvas id="cvCoh" class="cv-sm" aria-label="Coherence spectrum"></canvas>
+        </div>
+        <div class="panel">
+          <header><h3>Theta–gamma coupling</h3><p class="mono" id="pacNote"></p></header>
+          <canvas id="cvPac" class="cv-sm" aria-label="Phase-amplitude coupling"></canvas>
+        </div>
+      </div>
+
+      <div class="panel">
+        <header>
+          <h3>Experiment · synaptic‑integrity sweep <span class="lbl" style="margin-left:6px">x: integrity, 1.0 → 0.2</span></h3>
+          <div class="legend">
+            <span><i class="sw" style="background:var(--hpc)"></i>θ coherence (6–10 Hz)</span>
+            <span><i class="sw" style="background:var(--pfc)"></i>γ coherence (30–80 Hz)</span>
+            <span><i class="sw" style="background:var(--inh)"></i>PAC MI ×50</span>
+          </div>
+        </header>
+        <canvas id="cvSweep" class="cv-sweep" aria-label="Sweep results"></canvas>
+        <div class="progress"><i id="prog"></i></div>
+        <div class="sweep-foot">
+          <p id="sweepNote">Runs 27 independent 8‑second simulations (three random networks at each of nine levels) from intact (1.0) to severe loss (0.2), using the coupling, theta and noise you set on the left.</p>
+          <button id="sweepBtn">Run sweep</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="notes">
+    <div class="card">
+      <h2>The model</h2>
+      <p>Each region holds 160 regular‑spiking pyramidal cells and 40 fast‑spiking interneurons (Izhikevich, 2003), integrated at 0.5 ms.</p>
+      <div class="eq">v' = 0.04v² + 5v + 140 − u + I
+u' = a(bv − u)
+if v ≥ 30 mV: v ← c, u ← u + d</div>
+      <p>Pooled synapses decay with τ<sub>E</sub> = 2 ms and τ<sub>I</sub> = 5 ms, which gives PING gamma near 35–40 Hz. An 8 Hz septal drive paces hippocampal theta. The HPC→PFC projection is 5.3× stronger than the return path.</p>
+    </div>
+    <div class="card">
+      <h2>What integrity changes</h2>
+      <ul>
+        <li>Recurrent E→E weights scale with integrity, standing in for synapse loss.</li>
+        <li>E→I drive keeps 35% at zero integrity, standing in for PV‑interneuron dysfunction.</li>
+        <li>Long‑range HPC↔PFC weights scale with integrity × coupling.</li>
+      </ul>
+      <p>Analysis uses Welch spectra (512‑sample Hann, 50% overlap), magnitude‑squared coherence and the Tort modulation index (18 phase bins; θ 6–10 Hz, γ 30–80 Hz) on a rolling 4.1 s window.</p>
+    </div>
+    <div class="card">
+      <h2>Scope</h2>
+      <p>This is a phenomenological teaching and hypothesis tool. It is not fitted to recordings, and its parameters are illustrative.</p>
+      <p>It explores one question from rodent work on Alzheimer's‑like pathology: behaviour can recover while fronto‑hippocampal synchrony stays impaired (Shamsedin, 2026, <em>Neuroscience Research</em> 231:105117, <a href="https://doi.org/10.1016/j.neures.2026.105117" target="_blank" rel="noopener">doi</a>).</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>SynchronyLab · MIT License · runs entirely client‑side</span>
+    <span>ORCID 0009‑0001‑2586‑1937</span>
+  </footer>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+/* ================= Model ================= */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function makeGauss(rng){let s=null;return()=>{if(s!==null){const v=s;s=null;return v}let u,v,r;do{u=2*rng()-1;v=2*rng()-1;r=u*u+v*v}while(r>=1||r===0);const f=Math.sqrt(-2*Math.log(r)/r);s=v*f;return u*f}}
+const NE=160, NI=40;
+class Region{
+  constructor(rng,gauss){
+    const N=NE+NI;this.N=N;
+    this.a=new Float32Array(N);this.b=new Float32Array(N);this.c=new Float32Array(N);this.d=new Float32Array(N);
+    this.v=new Float32Array(N);this.u=new Float32Array(N);this.k=new Float32Array(N);this.bias=new Float32Array(N);
+    for(let i=0;i<N;i++){const r=rng();
+      if(i<NE){this.a[i]=0.02;this.b[i]=0.2;this.c[i]=-65+15*r*r;this.d[i]=8-6*r*r;}
+      else{this.a[i]=0.02+0.08*r;this.b[i]=0.25-0.05*r;this.c[i]=-65;this.d[i]=2;}
+      this.v[i]=-65;this.u[i]=this.b[i]*-65;this.k[i]=0.7+0.6*rng();this.bias[i]=gauss();}
+    this.sE=0;this.sI=0;this.spk=new Uint8Array(N);this.nE=0;this.nI=0;this.lfp=0;
+  }
+}
+class Model{
+  constructor(seed,P){
+    const rng=mulberry32(seed);this.g=makeGauss(rng);
+    this.dt=0.5;this.t=0;this.P=P;
+    this.H=new Region(rng,this.g);this.F=new Region(rng,this.g);
+  }
+  stepRegion(R,ext,extI,thetaE,thetaI){
+    const P=this.P,g=this.g,dt=this.dt,N=R.N,q=P.integrity;
+    const wEE=6*q, wEI=14*(0.35+0.65*q), wIE=9, wII=4, sE=R.sE, sI=R.sI;
+    const dE=4.6*P.drive, dI=3.0*P.drive, ns=P.noise*2.2;
+    let nE=0,nI=0,lfp=0;
+    for(let i=0;i<N;i++){
+      const exc=i<NE; let I=(exc?dE:dI)+0.8*R.bias[i]+ns*g();
+      if(exc){const syn=wEE*sE-wIE*sI;I+=R.k[i]*syn+ext+thetaE;lfp+=syn+ext;}
+      else{I+=R.k[i]*(wEI*sE-wII*sI)+extI+thetaI;}
+      let v=R.v[i],u=R.u[i];
+      v+=0.5*dt*(0.04*v*v+5*v+140-u+I);
+      v+=0.5*dt*(0.04*v*v+5*v+140-u+I);
+      u+=dt*R.a[i]*(R.b[i]*v-u);
+      if(v>=30){R.v[i]=R.c[i];R.u[i]=u+R.d[i];R.spk[i]=1;if(exc)nE++;else nI++;}
+      else{R.v[i]=v;R.u[i]=u;R.spk[i]=0;}
+    }
+    R.nE=nE;R.nI=nI;R.lfp=lfp/NE;
+  }
+  step(){
+    const P=this.P,dt=this.dt,H=this.H,F=this.F;
+    const th=Math.sin(2*Math.PI*8*this.t/1000);
+    const cHF=8*P.coupling*P.integrity, cFH=1.5*P.coupling*P.integrity;
+    const extH=cFH*F.sE, extF=cHF*H.sE;
+    this.stepRegion(H,extH,0.3*extH,1.6*P.theta*th,3.0*P.theta*th);
+    this.stepRegion(F,extF,0.6*extF,0,0);
+    for(const R of [H,F]){
+      R.sE+=-R.sE*dt/2+R.nE*20/NE;
+      R.sI+=-R.sI*dt/5+R.nI*20/NI;
+    }
+    this.t+=dt;
+  }
+}
+
+/* ================= Signal analysis ================= */
+function fft(re,im){const n=re.length;
+  for(let i=1,j=0;i<n;i++){let b=n>>1;for(;j&b;b>>=1)j^=b;j^=b;if(i<j){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}}
+  for(let len=2;len<=n;len<<=1){const ang=-2*Math.PI/len,wr=Math.cos(ang),wi=Math.sin(ang),h=len>>1;
+    for(let i=0;i<n;i+=len){let cr=1,ci=0;for(let j=0;j<h;j++){const a=i+j,b=a+h;
+      const xr=re[b]*cr-im[b]*ci,xi=re[b]*ci+im[b]*cr;re[b]=re[a]-xr;im[b]=im[a]-xi;re[a]+=xr;im[a]+=xi;
+      const t=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=t;}}}}
+const FS=1000, SEG=512, BUF=4096;
+const HANN=new Float64Array(SEG).map((_,i)=>0.5-0.5*Math.cos(2*Math.PI*i/(SEG-1)));
+function welch(x,y){
+  const L=SEG,S=L/2,K=L/2+1,nseg=Math.floor((x.length-L)/S)+1;
+  const Pxx=new Float64Array(K),Pyy=new Float64Array(K),Cr=new Float64Array(K),Ci=new Float64Array(K);
+  const xr=new Float64Array(L),xi=new Float64Array(L),yr=new Float64Array(L),yi=new Float64Array(L);
+  for(let s=0;s<nseg;s++){const o=s*S;let mx=0,my=0;for(let i=0;i<L;i++){mx+=x[o+i];my+=y[o+i]}mx/=L;my/=L;
+    for(let i=0;i<L;i++){xr[i]=(x[o+i]-mx)*HANN[i];yr[i]=(y[o+i]-my)*HANN[i];xi[i]=0;yi[i]=0}
+    fft(xr,xi);fft(yr,yi);
+    for(let k=0;k<K;k++){Pxx[k]+=xr[k]*xr[k]+xi[k]*xi[k];Pyy[k]+=yr[k]*yr[k]+yi[k]*yi[k];Cr[k]+=xr[k]*yr[k]+xi[k]*yi[k];Ci[k]+=xi[k]*yr[k]-xr[k]*yi[k];}}
+  const coh=new Float64Array(K);for(let k=0;k<K;k++)coh[k]=(Cr[k]*Cr[k]+Ci[k]*Ci[k])/(Pxx[k]*Pyy[k]+1e-30);
+  return{Pxx,Pyy,coh,df:FS/L};
+}
+function bandMean(a,df,lo,hi){let s=0,n=0;for(let k=0;k<a.length;k++){const f=k*df;if(f>=lo&&f<=hi){s+=a[k];n++}}return n?s/n:0}
+/* analytic signal of band-limited x via FFT (ideal band-pass + Hilbert) */
+function analytic(x,lo,hi){const n=x.length,re=Float64Array.from(x),im=new Float64Array(n);let m=0;for(let i=0;i<n;i++)m+=re[i];m/=n;for(let i=0;i<n;i++)re[i]-=m;
+  fft(re,im);const df=FS/n;
+  for(let k=0;k<n;k++){const f=k*df;const keep=k>0&&k<n/2&&f>=lo&&f<=hi;if(keep){re[k]*=2;im[k]*=2}else{re[k]=0;im[k]=0}}
+  for(let k=0;k<n;k++)im[k]=-im[k];fft(re,im);for(let k=0;k<n;k++){re[k]/=n;im[k]=-im[k]/n}return{re,im}}
+const NB=18;
+function pac(phaseSrc,ampSrc){
+  const p=analytic(phaseSrc,6,10),a=analytic(ampSrc,30,80),n=phaseSrc.length,edge=300;
+  const sum=new Float64Array(NB),cnt=new Float64Array(NB);
+  for(let i=edge;i<n-edge;i++){const ph=Math.atan2(p.im[i],p.re[i]);const amp=Math.hypot(a.re[i],a.im[i]);
+    let b=Math.floor((ph+Math.PI)/(2*Math.PI)*NB);if(b>=NB)b=NB-1;sum[b]+=amp;cnt[b]++;}
+  const dist=new Float64Array(NB);let tot=0;for(let b=0;b<NB;b++){dist[b]=cnt[b]?sum[b]/cnt[b]:0;tot+=dist[b]}
+  let H=0;for(let b=0;b<NB;b++){dist[b]/=tot||1;if(dist[b]>0)H-=dist[b]*Math.log(dist[b])}
+  return{dist,mi:(Math.log(NB)-H)/Math.log(NB)};
+}
+function analyse(x,y){
+  const w=welch(x,y);
+  return{w,
+    thCoh:bandMean(w.coh,w.df,6,10),gaCoh:bandMean(w.coh,w.df,30,80),
+    pacH:pac(x,x),pacX:pac(x,y),
+    gPeak:(()=>{let best=0,bk=0;for(let k=0;k<w.Pxx.length;k++){const f=k*w.df;if(f>=25&&f<=90&&w.Pxx[k]>best){best=w.Pxx[k];bk=k}}return bk*w.df})()};
+}
+
+/* ================= State ================= */
+const P={integrity:1,coupling:1,theta:1,noise:1,drive:1};
+const CONTROLS=[
+  {k:"integrity",label:"Synaptic integrity",min:0.2,max:1,step:0.01,fmt:v=>v.toFixed(2),hint:"1.0 is intact. Lower values remove local and long‑range excitatory synapses."},
+  {k:"coupling",label:"HPC ↔ PFC coupling",min:0,max:2,step:0.05,fmt:v=>v.toFixed(2)+"×",hint:"Strength of the long‑range projection, independent of pathology."},
+  {k:"theta",label:"Septal theta drive",min:0,max:2,step:0.05,fmt:v=>v.toFixed(2)+"×",hint:"8 Hz rhythmic input to hippocampus."},
+  {k:"drive",label:"Background excitation",min:0.7,max:1.3,step:0.01,fmt:v=>v.toFixed(2)+"×",hint:"Tonic input to every cell."},
+  {k:"noise",label:"Membrane noise",min:0,max:2,step:0.05,fmt:v=>v.toFixed(2)+"×",hint:"Independent Gaussian current per cell."}
+];
+const PRESETS={
+  healthy:{integrity:1,coupling:1,theta:1,noise:1,drive:1},
+  early:{integrity:0.7,coupling:1,theta:1,noise:1,drive:1},
+  advanced:{integrity:0.35,coupling:1,theta:1,noise:1,drive:1},
+  disconnected:{integrity:1,coupling:0,theta:1,noise:1,drive:1}
+};
+let model=new Model(11,P);
+const lfpH=new Float32Array(BUF),lfpF=new Float32Array(BUF);let li=0,filled=0;
+const rateH=new Uint16Array(1000),rateF=new Uint16Array(1000);let ri=0;
+let accH=0,accF=0,accNH=0,accNF=0,sub=0;
+let running=!matchMedia("(prefers-reduced-motion: reduce)").matches,speed=1;
+let latest=null,sweep=null;
+
+/* ================= UI build ================= */
+const $=id=>document.getElementById(id);
+const ctlBox=$("controls");
+ctlBox.innerHTML='<span class="lbl">Parameters</span>'+CONTROLS.map(c=>`<div class="ctl"><div class="row"><label for="in-${c.k}">${c.label}</label><output id="out-${c.k}"></output></div><input type="range" id="in-${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${P[c.k]}"><small>${c.hint}</small></div>`).join("");
+ctlBox.firstChild.style.display="block";ctlBox.firstChild.style.marginBottom="12px";
+function syncControls(){for(const c of CONTROLS){$("in-"+c.k).value=P[c.k];$("out-"+c.k).textContent=c.fmt(P[c.k])}}
+for(const c of CONTROLS){$("in-"+c.k).addEventListener("input",e=>{P[c.k]=+e.target.value;$("out-"+c.k).textContent=c.fmt(P[c.k]);markPreset();drawSweep();});}
+function markPreset(){for(const b of document.querySelectorAll("[data-preset]")){const pr=PRESETS[b.dataset.preset];b.setAttribute("aria-pressed",String(Object.keys(pr).every(k=>Math.abs(pr[k]-P[k])<1e-9)))}}
+for(const b of document.querySelectorAll("[data-preset]"))b.addEventListener("click",()=>{Object.assign(P,PRESETS[b.dataset.preset]);syncControls();markPreset();drawSweep();});
+syncControls();
+
+const METRICS=[
+  {id:"rH",label:"HPC pyramidal rate",sw:"--hpc"},{id:"rF",label:"PFC pyramidal rate",sw:"--pfc"},
+  {id:"gP",label:"Gamma peak (HPC)"},{id:"tC",label:"θ coherence"},{id:"gC",label:"γ coherence"},{id:"mi",label:"θ–γ PAC (MI)"}];
+$("metrics").innerHTML=METRICS.map(m=>`<div class="m"><span class="lbl">${m.sw?`<i class="sw" style="background:var(${m.sw})"></i>`:""}${m.label}</span><span class="v" id="v-${m.id}">–</span><span class="chip none" id="c-${m.id}">–</span></div>`).join("");
+function setMetric(id,val,unit,state,text){$("v-"+id).innerHTML=val+(unit?`<small>${unit}</small>`:"");const c=$("c-"+id);c.className="chip "+state;c.textContent=text}
+function grade(v,hi,mid){return v>=hi?["good","strong"]:v>=mid?["warn","reduced"]:["bad","weak"]}
+
+for(const b of document.querySelectorAll("[data-speed]"))b.addEventListener("click",()=>{speed=+b.dataset.speed;for(const o of document.querySelectorAll("[data-speed]"))o.setAttribute("aria-pressed",String(o===b))});
+$("runBtn").addEventListener("click",()=>{running=!running;$("runBtn").textContent=running?"Pause":"Run"});
+$("runBtn").textContent=running?"Pause":"Run";
+$("resetBtn").addEventListener("click",()=>{model=new Model((Math.random()*1e9)|0,P);lfpH.fill(0);lfpF.fill(0);li=0;filled=0;rateH.fill(0);rateF.fill(0);clearRaster();warm(1200);});
+
+/* ================= Canvas helpers ================= */
+let C={};
+function readColors(){const s=getComputedStyle(document.documentElement);for(const k of["hpc","pfc","inh","fg","muted","grid","band","panel","line","panel-2"])C[k]=s.getPropertyValue("--"+k).trim()}
+readColors();
+const mq=matchMedia("(prefers-color-scheme: dark)");
+const recolor=()=>{readColors();clearRaster();redrawStatic()};
+mq.addEventListener?.("change",recolor);
+new MutationObserver(recolor).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+function fit(cv){const r=cv.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2);const w=Math.max(1,Math.round(r.width*d)),h=Math.max(1,Math.round(r.height*d));if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;return true}return false}
+const cv={raster:$("cvRaster"),lfp:$("cvLfp"),psd:$("cvPsd"),coh:$("cvCoh"),pac:$("cvPac"),sweep:$("cvSweep")};
+const dpr=()=>Math.min(devicePixelRatio||1,2);
+function axes(ctx,W,H,pad,xs,ys,xl,yl){
+  const d=dpr();ctx.font=`${10.5*d}px "IBM Plex Mono", monospace`;ctx.fillStyle=C.muted;ctx.strokeStyle=C.grid;ctx.lineWidth=1*d;
+  ctx.textAlign="center";ctx.textBaseline="top";
+  xs.forEach(([v,x],i)=>{ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,H-pad.b);ctx.stroke();const last=i===xs.length-1,first=i===0;ctx.textAlign=last?"right":first?"left":"center";ctx.fillText(last&&xl?v+" "+xl:v,x+(last?2*d:0),H-pad.b+4*d)});
+  ctx.textAlign="right";ctx.textBaseline="middle";
+  for(const [v,y] of ys){ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();ctx.fillText(v,pad.l-5*d,y)}
+  if(yl){ctx.save();ctx.textAlign="left";ctx.textBaseline="top";ctx.fillText(yl,pad.l+4*d,pad.t+2*d);ctx.restore()}
+}
+function shadeBand(ctx,x0,x1,pad,H){ctx.fillStyle=C.band;ctx.fillRect(x0,pad.t,x1-x0,H-pad.t-pad.b)}
+
+/* raster: oscilloscope-style sweep */
+let rctx=cv.raster.getContext("2d"),lastX=0;
+function clearRaster(){fit(cv.raster);rctx.fillStyle=C.panel;rctx.fillRect(0,0,cv.raster.width,cv.raster.height);lastX=0}
+function rasterStep(){
+  const W=cv.raster.width,H=cv.raster.height,gap=6*dpr(),rows=400,rowH=(H-gap)/rows;
+  const x=((model.t%1000)/1000)*W,w=Math.max(1.2*dpr(),W/2000*1.6);
+  for(let r=0;r<2;r++){const R=r?model.F:model.H,off=r?(H+gap)/2:0;
+    for(let i=0;i<R.N;i++)if(R.spk[i]){rctx.fillStyle=i<NE?(r?C.pfc:C.hpc):C.inh;rctx.fillRect(x,off+i*rowH,w,Math.max(rowH,1.2*dpr()))}}
+}
+function rasterWipe(){
+  const W=cv.raster.width,H=cv.raster.height,x=((model.t%1000)/1000)*W,ahead=Math.max(24*dpr(),W*0.035);
+  rctx.fillStyle=C.panel;
+  const from=x+2*dpr(),to=x+ahead;
+  if(to<=W)rctx.fillRect(from,0,to-from,H);else{rctx.fillRect(from,0,W-from,H);rctx.fillRect(0,0,to-W,H)}
+  lastX=x;
+}
+
+/* ================= Simulation loop ================= */
+function simSteps(n,draw){
+  for(let s=0;s<n;s++){
+    model.step();
+    if(draw)rasterStep();
+    accH+=model.H.lfp;accF+=model.F.lfp;accNH+=model.H.nE;accNF+=model.F.nE;
+    if(++sub===2){
+      lfpH[li]=accH/2;lfpF[li]=accF/2;li=(li+1)%BUF;if(filled<BUF)filled++;
+      rateH[ri]=accNH;rateF[ri]=accNF;ri=(ri+1)%1000;
+      accH=accF=accNH=accNF=0;sub=0;
+    }
+  }
+}
+function linear(buf){const o=new Float64Array(BUF);for(let k=0;k<BUF;k++)o[k]=buf[(li+k)%BUF];return o}
+function warm(ms){const steps=Math.round(ms*2),drawFrom=steps-2000;for(let s=0;s<steps;s++)simSteps(1,s>=drawFrom);rasterWipe();runAnalysis();drawLfp();}
+
+function runAnalysis(){
+  if(filled<BUF)return;
+  const x=linear(lfpH),y=linear(lfpF);latest=analyse(x,y);
+  let sH=0,sF=0;for(let i=0;i<1000;i++){sH+=rateH[i];sF+=rateF[i]}
+  latest.rH=sH/NE;latest.rF=sF/NE;
+  setMetric("rH",latest.rH.toFixed(1),"Hz","none","per cell");
+  setMetric("rF",latest.rF.toFixed(1),"Hz","none","per cell");
+  const gp=latest.gPeak;setMetric("gP",gp.toFixed(0),"Hz",gp>=30&&gp<=80?"good":"warn",gp>=30&&gp<=80?"in γ band":"outside γ");
+  let g=grade(latest.thCoh,0.6,0.4);setMetric("tC",latest.thCoh.toFixed(2),"",g[0],g[1]);
+  g=grade(latest.gaCoh,0.5,0.3);setMetric("gC",latest.gaCoh.toFixed(2),"",g[0],g[1]);
+  const mi=latest.pacH.mi;g=grade(mi,0.013,0.010);setMetric("mi",(mi*1000).toFixed(1),"×10⁻³",g[0],g[1]);
+  drawPsd();drawCoh();drawPac();
+}
+
+/* ================= Plots ================= */
+function drawLfp(){
+  const c=cv.lfp;fit(c);const ctx=c.getContext("2d"),W=c.width,H=c.height,d=dpr();ctx.clearRect(0,0,W,H);
+  const n=1000,pad={l:8*d,r:8*d,t:6*d,b:6*d},half=(H-pad.t-pad.b)/2;
+  for(const [buf,col,off] of [[lfpH,C.hpc,0],[lfpF,C.pfc,1]]){
+    let mn=Infinity,mx=-Infinity;for(let k=0;k<n;k++){const v=buf[(li-n+k+BUF)%BUF];if(v<mn)mn=v;if(v>mx)mx=v}
+    const rng=(mx-mn)||1,y0=pad.t+off*half;
+    ctx.strokeStyle=C.grid;ctx.lineWidth=d;ctx.beginPath();ctx.moveTo(pad.l,y0+half);ctx.lineTo(W-pad.r,y0+half);ctx.stroke();
+    ctx.strokeStyle=col;ctx.lineWidth=1.25*d;ctx.beginPath();
+    for(let k=0;k<n;k++){const v=buf[(li-n+k+BUF)%BUF];const x=pad.l+(W-pad.l-pad.r)*k/(n-1),y=y0+half*0.92-(v-mn)/rng*half*0.84;k?ctx.lineTo(x,y):ctx.moveTo(x,y)}
+    ctx.stroke();
+  }
+  ctx.font=`${10.5*d}px "IBM Plex Mono", monospace`;ctx.fillStyle=C.muted;ctx.textAlign="right";ctx.textBaseline="bottom";ctx.fillText("1 s · auto‑scaled",W-pad.r,H-2*d);
+}
+const FMAX=100;
+function specFrame(c){fit(c);const ctx=c.getContext("2d"),W=c.width,H=c.height,d=dpr();ctx.clearRect(0,0,W,H);
+  const pad={l:40*d,r:10*d,t:10*d,b:20*d};const X=f=>pad.l+(W-pad.l-pad.r)*f/FMAX;return{ctx,W,H,d,pad,X}}
+function drawPsd(){
+  if(!latest)return;const {ctx,W,H,d,pad,X}=specFrame(cv.psd),w=latest.w;
+  const dbH=[],dbF=[];let top=-Infinity;
+  for(let k=0;k*w.df<=FMAX;k++){const a=10*Math.log10(w.Pxx[k]+1e-12),b=10*Math.log10(w.Pyy[k]+1e-12);dbH.push(a);dbF.push(b);if(k*w.df>=3){top=Math.max(top,a,b)}}
+  top=Math.ceil(top/10)*10;const bot=top-40;const Y=v=>pad.t+(H-pad.t-pad.b)*(top-Math.max(bot,Math.min(top,v)))/(top-bot);
+  shadeBand(ctx,X(6),X(10),pad,H);shadeBand(ctx,X(30),X(80),pad,H);
+  axes(ctx,W,H,pad,[0,20,40,60,80,100].map(f=>[f,X(f)]),[0,-10,-20,-30,-40].map(v=>[v,Y(top+v)]),"Hz","dB re max");
+  for(const [arr,col] of [[dbF,C.pfc],[dbH,C.hpc]]){ctx.strokeStyle=col;ctx.lineWidth=1.6*d;ctx.beginPath();arr.forEach((v,k)=>{const x=X(k*w.df),y=Y(v);k?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}
+  $("psdNote").textContent="θ 6–10 · γ 30–80 Hz";
+}
+function drawCoh(){
+  if(!latest)return;const {ctx,W,H,d,pad,X}=specFrame(cv.coh),w=latest.w;const Y=v=>pad.t+(H-pad.t-pad.b)*(1-v);
+  shadeBand(ctx,X(6),X(10),pad,H);shadeBand(ctx,X(30),X(80),pad,H);
+  axes(ctx,W,H,pad,[0,20,40,60,80,100].map(f=>[f,X(f)]),[0,0.25,0.5,0.75,1].map(v=>[v.toFixed(2),Y(v)]),"Hz");
+  ctx.beginPath();let first=true;for(let k=0;k*w.df<=FMAX;k++){const x=X(k*w.df),y=Y(w.coh[k]);first?ctx.moveTo(x,y):ctx.lineTo(x,y);first=false}
+  ctx.strokeStyle=C.fg;ctx.lineWidth=1.6*d;ctx.stroke();
+  ctx.lineTo(X(Math.min(FMAX,Math.floor(FMAX/w.df)*w.df)),Y(0));ctx.lineTo(X(0),Y(0));ctx.closePath();ctx.globalAlpha=.10;ctx.fillStyle=C.fg;ctx.fill();ctx.globalAlpha=1;
+  ctx.font=`${10.5*d}px "IBM Plex Mono", monospace`;ctx.textAlign="left";ctx.textBaseline="top";
+  ctx.fillStyle=C.hpc;ctx.fillText("θ "+latest.thCoh.toFixed(2),X(10)+4*d,pad.t+2*d);ctx.fillStyle=C.pfc;ctx.fillText("γ "+latest.gaCoh.toFixed(2),X(80)-40*d,pad.t+2*d);
+}
+function drawPac(){
+  if(!latest)return;const c=cv.pac;fit(c);const ctx=c.getContext("2d"),W=c.width,H=c.height,d=dpr();ctx.clearRect(0,0,W,H);
+  const pad={l:44*d,r:10*d,t:10*d,b:20*d},A=latest.pacH.dist,B=latest.pacX.dist;
+  let mn=Infinity,mx=-Infinity;for(const v of [...A,...B]){mn=Math.min(mn,v);mx=Math.max(mx,v)}
+  const lo=Math.floor(mn*1000)/1000-0.002,hi=Math.ceil(mx*1000)/1000+0.002;
+  const X=deg=>pad.l+(W-pad.l-pad.r)*deg/720,Y=v=>pad.t+(H-pad.t-pad.b)*(1-(v-lo)/(hi-lo));
+  const yt=[];for(let i=0;i<=3;i++){const v=lo+(hi-lo)*i/3;yt.push([v.toFixed(3),Y(v)])}
+  axes(ctx,W,H,pad,[0,180,360,540,720].map(v=>[v+"°",X(v)]),yt);
+  const bw=(W-pad.l-pad.r)/(2*NB);
+  for(let r=0;r<2;r++)for(let b=0;b<NB;b++){const x=X(r*360+b*20);ctx.fillStyle=C.hpc;ctx.globalAlpha=.8;ctx.fillRect(x+1*d,Y(A[b]),bw-2*d,Y(lo)-Y(A[b]));}
+  ctx.globalAlpha=1;ctx.strokeStyle=C.pfc;ctx.lineWidth=1.8*d;ctx.beginPath();
+  for(let r=0;r<2;r++)for(let b=0;b<NB;b++){const x=X(r*360+b*20+10),y=Y(B[b]);(r||b)?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.stroke();
+  $("pacNote").innerHTML=`<span style="color:var(--hpc)">■ HPC→HPC ${(latest.pacH.mi*1000).toFixed(1)}</span> · <span style="color:var(--pfc)">— HPC θ→PFC γ ${(latest.pacX.mi*1000).toFixed(1)}</span> ×10⁻³`;
+}
+
+/* ================= Sweep experiment ================= */
+const SWEEP_Q=[1,0.9,0.8,0.7,0.6,0.5,0.4,0.3,0.2],SWEEP_SEEDS=[101,202,303],SBUF=8192;
+const stat=a=>{const m=a.reduce((x,y)=>x+y,0)/a.length;const sd=Math.sqrt(a.reduce((x,y)=>x+(y-m)**2,0)/Math.max(1,a.length-1));return{m,se:sd/Math.sqrt(a.length)}};
+function runSweep(){
+  const btn=$("sweepBtn");btn.disabled=true;btn.textContent="Running…";
+  const base={...P};const raw=SWEEP_Q.map(()=>({th:[],ga:[],mi:[]}));const jobs=[];
+  for(let qi=0;qi<SWEEP_Q.length;qi++)for(const sd of SWEEP_SEEDS)jobs.push([qi,sd]);
+  let ji=0,m=null,bufH=null,bufF=null,step=0;const warmSteps=1000,recSteps=SBUF*2;
+  $("prog").style.width="0%";
+  function chunk(){
+    const t0=performance.now();
+    while(performance.now()-t0<14){
+      if(!m){const [qi,sd]=jobs[ji];m=new Model(sd+qi,{...base,integrity:SWEEP_Q[qi]});bufH=new Float64Array(SBUF);bufF=new Float64Array(SBUF);step=0}
+      m.step();
+      if(step>=warmSteps){const k=(step-warmSteps)>>1;bufH[k]+=m.H.lfp/2;bufF[k]+=m.F.lfp/2}
+      step++;
+      if(step>=warmSteps+recSteps){const a=analyse(bufH,bufF),r=raw[jobs[ji][0]];r.th.push(a.thCoh);r.ga.push(a.gaCoh);r.mi.push(a.pacH.mi);m=null;ji++;
+        $("prog").style.width=(ji/jobs.length*100)+"%";
+        if(ji>=jobs.length){const res=SWEEP_Q.map((q,i)=>({q,th:stat(raw[i].th),ga:stat(raw[i].ga),mi:stat(raw[i].mi)}));
+          sweep={res,base};drawSweep();btn.disabled=false;btn.textContent="Run sweep again";
+          const f=res[0],l=res[res.length-1];$("sweepNote").textContent=`Mean of 3 networks per level. θ coherence ${f.th.m.toFixed(2)} → ${l.th.m.toFixed(2)}, γ coherence ${f.ga.m.toFixed(2)} → ${l.ga.m.toFixed(2)}, PAC ${(f.mi.m*1000).toFixed(1)} → ${(l.mi.m*1000).toFixed(1)} ×10⁻³ from intact to 0.2 integrity (coupling ${base.coupling.toFixed(2)}×, theta ${base.theta.toFixed(2)}×). Error bars: ±1 SEM.`;return}}
+    }
+    setTimeout(chunk,0);
+  }
+  chunk();
+}
+$("sweepBtn").addEventListener("click",runSweep);
+function drawSweep(){
+  const c=cv.sweep;fit(c);const ctx=c.getContext("2d"),W=c.width,H=c.height,d=dpr();ctx.clearRect(0,0,W,H);
+  const pad={l:40*d,r:14*d,t:12*d,b:22*d};const X=q=>pad.l+(W-pad.l-pad.r)*(1-q)/0.8,Y=v=>pad.t+(H-pad.t-pad.b)*(1-v);
+  axes(ctx,W,H,pad,[1,0.8,0.6,0.4,0.2].map(q=>[q.toFixed(1),X(q)]),[0,0.25,0.5,0.75,1].map(v=>[v.toFixed(2),Y(v)]),"");
+  const cq=Math.max(0.2,Math.min(1,P.integrity));ctx.strokeStyle=C.fg;ctx.setLineDash([3*d,4*d]);ctx.lineWidth=d;ctx.beginPath();ctx.moveTo(X(cq),pad.t);ctx.lineTo(X(cq),H-pad.b);ctx.stroke();ctx.setLineDash([]);
+  ctx.font=`${10.5*d}px "IBM Plex Mono", monospace`;ctx.fillStyle=C.fg;ctx.textAlign=cq>0.5?"left":"right";ctx.textBaseline="top";ctx.fillText(" current "+cq.toFixed(2)+" ",X(cq),pad.t);
+  if(!sweep){ctx.fillStyle=C.muted;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("Sweep running…",W/2,H/2);return}
+  const series=[["th",C.hpc,1],["ga",C.pfc,1],["mi",C.inh,50]];
+  for(const [k,col,sc] of series){ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=2*d;ctx.beginPath();
+    sweep.res.forEach((r,i)=>{const x=X(r.q),y=Y(Math.min(1,r[k].m*sc));i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+    ctx.lineWidth=1.2*d;
+    sweep.res.forEach(r=>{const x=X(r.q),y=Y(Math.min(1,r[k].m*sc)),e=r[k].se*sc*(H-pad.t-pad.b);
+      ctx.beginPath();ctx.moveTo(x,y-e);ctx.lineTo(x,y+e);ctx.moveTo(x-3*d,y-e);ctx.lineTo(x+3*d,y-e);ctx.moveTo(x-3*d,y+e);ctx.lineTo(x+3*d,y+e);ctx.stroke();
+      ctx.beginPath();ctx.arc(x,y,3.2*d,0,7);ctx.fill()});}
+}
+
+/* ================= CSV ================= */
+function toast(msg){const t=$("toast");t.textContent=msg;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,2200)}
+$("csvBtn").addEventListener("click",()=>{
+  const lines=["section,key,value"];for(const k in P)lines.push(`parameter,${k},${P[k]}`);
+  if(latest){lines.push(`live,hpc_rate_hz,${latest.rH.toFixed(3)}`,`live,pfc_rate_hz,${latest.rF.toFixed(3)}`,`live,gamma_peak_hz,${latest.gPeak.toFixed(2)}`,`live,theta_coherence,${latest.thCoh.toFixed(4)}`,`live,gamma_coherence,${latest.gaCoh.toFixed(4)}`,`live,pac_mi_hpc,${latest.pacH.mi.toExponential(4)}`,`live,pac_mi_hpc_to_pfc,${latest.pacX.mi.toExponential(4)}`);
+    const w=latest.w;for(let k=0;k*w.df<=100;k++)lines.push(`spectrum_${(k*w.df).toFixed(3)}Hz,psd_hpc|psd_pfc|coherence,${w.Pxx[k].toExponential(4)}|${w.Pyy[k].toExponential(4)}|${w.coh[k].toFixed(4)}`);}
+  if(sweep)for(const r of sweep.res)lines.push(`sweep_integrity_${r.q},theta_coh_mean|theta_coh_sem|gamma_coh_mean|gamma_coh_sem|pac_mi_mean|pac_mi_sem,${r.th.m.toFixed(4)}|${r.th.se.toFixed(4)}|${r.ga.m.toFixed(4)}|${r.ga.se.toFixed(4)}|${r.mi.m.toExponential(4)}|${r.mi.se.toExponential(4)}`);
+  const text=lines.join("\n");
+  const done=()=>toast("Copied "+lines.length+" rows");
+  try{navigator.clipboard.writeText(text).then(done,()=>fallback(text))}catch(e){fallback(text)}
+  function fallback(t){const ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand("copy")}catch(e){}ta.remove();toast(ok?"Copied "+lines.length+" rows":"Copy was blocked by the browser")}
+});
+
+/* ================= Main loop ================= */
+function redrawStatic(){drawLfp();drawPsd();drawCoh();drawPac();drawSweep()}
+let lastT=performance.now(),lastA=0;
+function frame(now){
+  const dt=Math.min(50,now-lastT);lastT=now;
+  if(fit(cv.raster))clearRaster();
+  if(running){const steps=Math.round(dt*speed*2);simSteps(steps,true);rasterWipe();drawLfp();
+    if(now-lastA>300){runAnalysis();lastA=now}
+    $("clock").textContent="t = "+(model.t/1000).toFixed(1)+" s";}
+  requestAnimationFrame(frame);
+}
+new ResizeObserver(()=>redrawStatic()).observe(document.querySelector(".stage"));
+clearRaster();warm(BUF+200);$("clock").textContent="t = "+(model.t/1000).toFixed(1)+" s";redrawStatic();
+requestAnimationFrame(frame);
+setTimeout(runSweep,400);
+</script>
+</body>
+</html>

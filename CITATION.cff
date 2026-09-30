@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "SynchronyLab: a spiking-network model of hippocampal–prefrontal synchrony under synaptic loss"
+type: software
+authors:
+  - family-names: Shamsedin
+    given-names: Mersedeh
+    orcid: "https://orcid.org/0009-0001-2586-1937"
+version: 1.0.0
+date-released: 2026-09-30
+license: MIT
+repository-code: "https://github.com/mersedeshamsedinqu-cell/SynchronyLab"
+url: "https://mersedeshamsedinqu-cell.github.io/SynchronyLab/"
+keywords:
+  - computational neuroscience
+  - spiking neural network
+  - Izhikevich
+  - hippocampus
+  - prefrontal cortex
+  - coherence
+  - phase-amplitude coupling
+  - Alzheimer's disease
